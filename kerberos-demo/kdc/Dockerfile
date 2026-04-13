@@ -1,6 +1,5 @@
 FROM debian:bookworm-slim
 
-# Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     wget \
@@ -9,35 +8,35 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and extract MIT Kerberos source
 ENV KRB5_VERSION=1.21.2
 RUN wget https://kerberos.org/dist/krb5/1.21/krb5-${KRB5_VERSION}.tar.gz && \
     tar -xzf krb5-${KRB5_VERSION}.tar.gz && \
     rm krb5-${KRB5_VERSION}.tar.gz
 
-# Build from source as per docs
 RUN cd krb5-${KRB5_VERSION}/src && \
     ./configure && \
     make && \
     make install && \
     ldconfig /usr/local/lib
 
-# The default LOCALSTATEDIR is /usr/local/var
 ENV KRB5_KDC_PROFILE=/usr/local/var/krb5kdc/kdc.conf
 
-# 1. krb5.conf
 RUN mkdir -p /etc && cat <<EOF > /etc/krb5.conf
 [libdefaults]
     default_realm = LAB.LOCAL
+    dns_lookup_kdc = false
 
 [realms]
     LAB.LOCAL = {
-        kdc = 127.0.0.1
-        admin_server = 127.0.0.1
+        kdc = kdc.lab.local:88
+        admin_server = kdc.lab.local:749
     }
+
+[domain_realm]
+    .lab.local = LAB.LOCAL
+    lab.local = LAB.LOCAL
 EOF
 
-# 2. kdc.conf
 RUN mkdir -p /usr/local/var/krb5kdc && \
     mkdir -p /var/log && \
     cat <<EOF > /usr/local/var/krb5kdc/kdc.conf
@@ -63,18 +62,13 @@ RUN mkdir -p /usr/local/var/krb5kdc && \
     default = FILE:/var/log/krb5lib.log
 EOF
 
-# 3. Add administrators to the ACL file
 RUN echo "*/admin@LAB.LOCAL *" > /usr/local/var/krb5kdc/kadm5.acl
 
-# 4. Entrypoint Script
 RUN cat <<EOF > /entrypoint.sh
 #!/bin/sh
 if [ ! -f /usr/local/var/krb5kdc/principal ]; then
     echo "Creating Kerberos Database..."
-    # Create DB with stash file (-s)
     printf "admin\nadmin\n" | /usr/local/sbin/kdb5_util create -s -r LAB.LOCAL
-    
-    # Add the admin principal
     /usr/local/sbin/kadmin.local -q "addprinc -pw admin admin/admin@LAB.LOCAL"
 fi
 

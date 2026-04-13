@@ -1,0 +1,116 @@
+apiVersion: sparkoperator.k8s.io/v1alpha1
+kind: SparkConnect
+metadata:
+  name: spark-connect-kerberos-test
+  namespace: default
+spec:
+  sparkVersion: 3.5.5
+  sparkConf:
+    # 1. Hive Connection
+    "spark.sql.catalogImplementation": "hive"
+    "spark.hadoop.hive.metastore.uris": "thrift://hive-metastore.hive.svc.cluster.local:9083" 
+    
+    # Storage Configuration (MinIO)
+    "spark.sql.warehouse.dir": "s3a://test-bucket/spark-warehouse/"
+    "spark.hadoop.fs.s3a.access.key": "minio"
+    "spark.hadoop.fs.s3a.secret.key": "minio123"
+    "spark.hadoop.fs.s3a.endpoint": "http://minio-service.default.svc.cluster.local:9000"
+    "spark.hadoop.fs.s3a.path.style.access": "true"
+    "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    "spark.hadoop.fs.s3a.connection.ssl.enabled": "false"
+    
+    # 2. Kerberos Core Settings
+    "spark.hadoop.hadoop.security.authentication": "kerberos"
+    "spark.hadoop.hive.metastore.sasl.enabled": "true"
+    
+    # 3. Server Principal (The Metastore's SPN)
+    "spark.hadoop.hive.metastore.kerberos.principal": "hive/hive-metastore.hive.svc.cluster.local@LAB.LOCAL"
+    
+    # 4. Client Principal (Who Spark is logging in as)
+    "spark.kerberos.principal": "srv-dev-data-client@LAB.LOCAL"
+    "spark.kerberos.keytab": "/etc/security/keytabs/client.keytab"
+
+  server:
+    template:
+      spec:
+        serviceAccount: spark-operator-spark
+        volumes:
+          - name: krb5-config-volume
+            configMap:
+              name: krb5-config
+          - name: client-keytab-volume
+            secret:
+              secretName: client-keytab
+              defaultMode: 292
+          - name: spark-hive-config-volume
+            configMap:
+              name: spark-hive-config
+          - name: spark-jaas-config-volume
+            configMap:
+              name: spark-jaas-config
+        containers:
+        - name: spark-kubernetes-driver
+          image: vieno70/spark-delta:3.5.5-minio-iceberg
+          env:
+            - name: HADOOP_CONF_DIR
+              value: "/opt/hive-conf"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djava.security.auth.login.config=/etc/security/jaas.conf -Djavax.security.auth.useSubjectCredsOnly=false -Dsun.security.krb5.debug=true"
+          volumeMounts:
+            - name: krb5-config-volume
+              mountPath: /etc/krb5.conf
+              subPath: krb5.conf
+              readOnly: true
+            - name: client-keytab-volume
+              mountPath: /etc/security/keytabs
+              readOnly: true
+            - name: spark-hive-config-volume
+              mountPath: /opt/hive-conf
+              readOnly: true
+            - name: spark-jaas-config-volume
+              mountPath: /etc/security/jaas.conf
+              subPath: jaas.conf
+              readOnly: true
+  executor:
+    instances: 1
+    cores: 1
+    memory: 512m
+    template:
+      spec:
+        volumes:
+          - name: krb5-config-volume
+            configMap:
+              name: krb5-config
+          - name: client-keytab-volume
+            secret:
+              secretName: client-keytab
+              defaultMode: 292
+          - name: spark-hive-config-volume
+            configMap:
+              name: spark-hive-config
+          - name: spark-jaas-config-volume
+            configMap:
+              name: spark-jaas-config
+        containers:
+        - name: spark-kubernetes-executor
+          image: vieno70/spark-delta:3.5.5-minio-iceberg
+          env:
+            - name: HADOOP_CONF_DIR
+              value: "/opt/hive-conf"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djava.security.auth.login.config=/etc/security/jaas.conf -Djavax.security.auth.useSubjectCredsOnly=false -Dsun.security.krb5.debug=true"
+          volumeMounts:
+            - name: krb5-config-volume
+              mountPath: /etc/krb5.conf
+              subPath: krb5.conf
+              readOnly: true
+            - name: client-keytab-volume
+              mountPath: /etc/security/keytabs
+              readOnly: true
+            - name: spark-hive-config-volume
+              mountPath: /opt/hive-conf
+              readOnly: true
+            - name: spark-jaas-config-volume
+              mountPath: /etc/security/jaas.conf
+              subPath: jaas.conf
+              readOnly: true

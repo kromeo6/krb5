@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-hive-config
+  namespace: default
+data:
+  hive-site.xml: |
+    <configuration>
+      <property>
+        <name>hive.metastore.uris</name>
+        <value>thrift://hive-metastore.hive.svc.cluster.local:9083</value>
+      </property>
+      <property>
+        <name>hive.metastore.sasl.enabled</name>
+        <value>true</value>
+      </property>
+      <property>
+        <name>hive.metastore.kerberos.principal</name>
+        <value>hive/hive-metastore.hive.svc.cluster.local@LAB.LOCAL</value>
+      </property>
+      <property>
+        <name>hive.metastore.client.kerberos.principal</name>
+        <value>srv-dev-data-client@LAB.LOCAL</value>
+      </property>
+      <property>
+        <name>hive.metastore.client.keytab.file</name>
+        <value>/etc/security/keytabs/client.keytab</value>
+      </property>
+    </configuration>

@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  kdc.lab.local:
+    build: 
+      context: ./kdc
+    hostname: kdc.lab.local
+    networks:
+      krb5-net:
+        aliases:
+          - kdc.lab.local
+    volumes:
+      - shared-keys:/shared
+
+  fake-hive.lab.local:
+    build:
+      context: ./server
+    hostname: fake-hive.lab.local
+    networks:
+      krb5-net:
+        aliases:
+          - fake-hive.lab.local
+    volumes:
+      - shared-keys:/shared
+    command: tail -f /dev/null
+
+  client.lab.local:
+    build:
+      context: ./client
+    hostname: client.lab.local
+    networks:
+      krb5-net:
+        aliases:
+          - client.lab.local
+    volumes:
+      - shared-keys:/shared
+    command: tail -f /dev/null
+
+networks:
+  krb5-net:
+    name: krb5-net
+
+volumes:
+  shared-keys:

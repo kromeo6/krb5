@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kerberos-client-test
+  namespace: hive # Change this to your Hive namespace
+spec:
+  containers:
+  - name: client
+    # A standard Debian image; we'll install Kerberos tools inside it
+    image: debian:bookworm-slim 
+    command: ["sleep", "infinity"] # Keep the pod running so we can exec into it
+    volumeMounts:
+    - name: krb5-config
+      mountPath: /etc/krb5.conf
+      subPath: krb5.conf
+      readOnly: true
+    - name: client-keytab
+      mountPath: /etc/security/keytabs
+      readOnly: true
+  volumes:
+  - name: krb5-config
+    configMap:
+      name: krb5-config # The ConfigMap you created with your krb5.conf
+  - name: client-keytab
+    secret:
+      secretName: client-keytab # The Secret you created containing the client keytab

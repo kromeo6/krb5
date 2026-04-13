@@ -1,0 +1,256 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hive
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: krb5-config
+  namespace: hive
+data:
+  krb5.conf: |
+    [libdefaults]
+        default_realm = LAB.LOCAL
+        dns_lookup_kdc = false
+
+    [realms]
+        LAB.LOCAL = {
+            kdc = 172.19.0.3:88
+            admin_server = 172.19.0.3:749
+        }
+
+    [domain_realm]
+        .lab.local = LAB.LOCAL
+        lab.local = LAB.LOCAL
+        .hive.svc.cluster.local = LAB.LOCAL
+        hive.svc.cluster.local = LAB.LOCAL
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hive-metastore-config
+  namespace: hive
+data:
+  hive-site.xml: |
+    <configuration>
+      <property>
+        <name>hive.metastore.sasl.enabled</name>
+        <value>true</value>
+      </property>
+      <property>
+        <name>hive.metastore.kerberos.principal</name>
+        <value>hive/hive-metastore.hive.svc.cluster.local@LAB.LOCAL</value>
+      </property>
+      <property>
+        <name>hive.metastore.kerberos.keytab.file</name>
+        <value>/etc/security/keytabs/hive.keytab</value>
+      </property>
+      <!-- Backend Database Config -->
+      <property>
+        <name>javax.jdo.option.ConnectionURL</name>
+        <value>jdbc:derby:/tmp/metastore_db;create=true</value>
+      </property>
+      <property>
+        <name>javax.jdo.option.ConnectionDriverName</name>
+        <value>org.apache.derby.jdbc.EmbeddedDriver</value>
+      </property>
+      <property>
+        <name>javax.jdo.option.ConnectionUserName</name>
+        <value>APP</value>
+      </property>
+      <property>
+        <name>javax.jdo.option.ConnectionPassword</name>
+        <value>mine</value>
+      </property>
+      <!-- S3 Storage Config -->
+      <property>
+        <name>hive.metastore.warehouse.dir</name>
+        <value>s3a://test-bucket/spark-warehouse/</value>
+      </property>
+      <property>
+        <name>fs.s3a.access.key</name>
+        <value>minio</value>
+      </property>
+      <property>
+        <name>fs.s3a.secret.key</name>
+        <value>minio123</value>
+      </property>
+      <property>
+        <name>fs.s3a.endpoint</name>
+        <value>http://minio-service.default.svc.cluster.local:9000</value>
+      </property>
+      <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+      </property>
+      <property>
+        <name>fs.s3a.connection.ssl.enabled</name>
+        <value>false</value>
+      </property>
+      <property>
+        <name>fs.s3a.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+      </property>
+      <!-- Auto create schema for lab -->
+      <property>
+        <name>datanucleus.autoCreateSchema</name>
+        <value>true</value>
+      </property>
+      <property>
+        <name>datanucleus.autoCreateTables</name>
+        <value>true</value>
+      </property>
+    </configuration>
+  core-site.xml: |
+    <configuration>
+      <property>
+        <name>hadoop.security.authentication</name>
+        <value>kerberos</value>
+      </property>
+      <property>
+        <name>fs.s3a.access.key</name>
+        <value>minio</value>
+      </property>
+      <property>
+        <name>fs.s3a.secret.key</name>
+        <value>minio123</value>
+      </property>
+      <property>
+        <name>fs.s3a.endpoint</name>
+        <value>http://minio-service.default.svc.cluster.local:9000</value>
+      </property>
+      <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+      </property>
+      <property>
+        <name>fs.s3a.connection.ssl.enabled</name>
+        <value>false</value>
+      </property>
+      <property>
+        <name>fs.s3a.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+      </property>
+    </configuration>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: hive
+spec:
+  ports:
+  - port: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: hive
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:13
+        env:
+        - name: POSTGRES_USER
+          value: hive
+        - name: POSTGRES_PASSWORD
+          value: hivepassword
+        - name: POSTGRES_DB
+          value: metastore
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hive-metastore
+  namespace: hive
+spec:
+  ports:
+  - port: 9083
+  selector:
+    app: hive-metastore
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hive-metastore
+  namespace: hive
+spec:
+  selector:
+    matchLabels:
+      app: hive-metastore
+  template:
+    metadata:
+      labels:
+        app: hive-metastore
+    spec:
+      initContainers:
+      - name: prepare-lib
+        image: apache/hive:3.1.3
+        command: ["/bin/sh", "-c"]
+        args:
+          - cp -r /opt/hive/lib/* /shared-lib/ &&
+            cp /opt/hadoop/share/hadoop/tools/lib/hadoop-aws* /shared-lib/ &&
+            cp /opt/hadoop/share/hadoop/tools/lib/aws-java-sdk* /shared-lib/
+        volumeMounts:
+        - name: hive-lib
+          mountPath: /shared-lib
+      volumes:
+        - name: hive-lib
+          emptyDir: {}
+        - name: krb5-config-volume
+          configMap:
+            name: krb5-config
+        - name: hive-keytab-volume
+          secret:
+            secretName: hive-keytab
+            defaultMode: 292
+        - name: hive-config-volume
+          configMap:
+            name: hive-metastore-config
+        - name: spark-jaas-config-volume
+          configMap:
+            name: spark-jaas-config
+      containers:
+      - name: hive-metastore
+        image: apache/hive:3.1.3
+        command: ["/bin/sh", "-c"]
+        args:
+          - export HADOOP_CLIENT_OPTS="-Xmx1G";
+            export HADOOP_OPTS="-Dsun.security.krb5.debug=true -Djava.security.krb5.conf=/etc/krb5.conf";
+            export HIVE_CONF_DIR=/opt/hive/conf;
+            /opt/hive/bin/schematool -dbType derby -initSchema --verbose || true;
+            /opt/hive/bin/hive --service metastore -hiveconf hive.root.logger=DEBUG,console
+        ports:
+        - containerPort: 9083
+        volumeMounts:
+          - name: hive-lib
+            mountPath: /opt/hive/lib
+          - name: krb5-config-volume
+            mountPath: /etc/krb5.conf
+            subPath: krb5.conf
+            readOnly: true
+          - name: hive-keytab-volume
+            mountPath: /etc/security/keytabs
+            readOnly: true
+          - name: hive-config-volume
+            mountPath: /opt/hive/conf/hive-site.xml
+            subPath: hive-site.xml
+          - name: hive-config-volume
+            mountPath: /opt/hive/conf/core-site.xml
+            subPath: core-site.xml
+          - name: spark-jaas-config-volume
+            mountPath: /etc/security/jaas.conf
+            subPath: jaas.conf
+            readOnly: true
