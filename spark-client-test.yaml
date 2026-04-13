@@ -17,14 +17,14 @@ data:
         print("Executing SHOW DATABASES:")
         spark.sql("SHOW DATABASES").show()
         
-        print("Creating table test_kerberos_hive_3...")
-        spark.sql("CREATE TABLE IF NOT EXISTS test_kerberos_hive_3 (id INT, name STRING) USING PARQUET")
+        print("Creating table test_kerberos_hive_5...")
+        spark.sql("CREATE TABLE IF NOT EXISTS test_kerberos_hive_5 (id INT, name STRING) USING PARQUET")
 
         print("Inserting data...")
-        spark.sql("INSERT INTO test_kerberos_hive_3 VALUES (1, 'Roma'), (2, 'Kerberos')")
+        spark.sql("INSERT INTO test_kerberos_hive_5 VALUES (1, 'Roma'), (2, 'Kerberos')")
 
         print("Querying data...")
-        spark.sql("SELECT * FROM test_kerberos_hive_3").show()
+        spark.sql("SELECT * FROM test_kerberos_hive_5").show()
         
         print("Job finished successfully!")
         spark.stop()
